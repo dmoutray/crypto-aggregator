@@ -1,93 +1,148 @@
 <script>
-  let coin1 = "bitcoin";
-  let coin1PurchasePrice = 0;
-  let coin1Amount = 0;
-  let coin2 = "cardano";
-  let coin2PurchasePrice = 0;
-  let coin2Amount = 0;
+  import CoinSelect from "./CoinSelect.svelte";
+  import Header from "./Header.svelte";
 
-  let currency1 = "gbp";
-  let currency2 = "usd";
+  let currencies = ["gbp", "usd"];
+  let coinList = ["bitcoin", "cardano", "ark", "dogecoin"];
+  let coinInformation;
 
-  $: currentInvestmentValue = 0;
+  let savedInfo = localStorage.getItem("coinInformation");
 
-  $: data = fetch(
-    `https://api.coingecko.com/api/v3/simple/price?ids=${
-      coin1 + "%2C" + coin2
-    }&vs_currencies=${currency1 + "%2C" + currency2}`
-  )
-    .then((response) => response.json())
-    .then((result) => {
-      currentInvestmentValue = (
-        coin1Amount * (coin1PurchasePrice / result.bitcoin?.gbp) +
-        coin1Amount * (coin2PurchasePrice / result.cardano?.gbp) 
-	  ).toFixed(2);
-      return result;
-    });
+  if (savedInfo) {
+    coinInformation = JSON.parse(savedInfo);
+  } else {
+    coinInformation = [
+      {
+        symbol: "bitcoin",
+        amount: 0.0,
+        purchasePrice: 0.0,
+        currentMarketPrice: {
+          gbp: 0.0,
+          usd: 0.0,
+        },
+      },
+      {
+        symbol: "cardano",
+        amount: 0.0,
+        purchasePrice: 0.0,
+        currentMarketPrice: {
+          gbp: 0.0,
+          usd: 0.0,
+        },
+      },
+    ];
+  }
 
-  $: totalInvested = coin1Amount + coin2Amount;
+  let newCoin = coinList[0];
+
+  function getMarketData() {
+    return fetch(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${coinInformation
+        .map((coin) => coin.symbol)
+        .join("%2C")}&vs_currencies=${currencies.join("%2C")}`
+    )
+      .then((response) => response.json())
+      .then((result) => {
+        let newInfo = coinInformation.map((coin) => {
+          coin.currentMarketPrice["gbp"] = parseFloat(
+            result[coin.symbol]["gbp"]
+          );
+          coin.currentMarketPrice["usd"] = parseFloat(
+            result[coin.symbol]["usd"]
+          );
+
+          return coin;
+        });
+
+        coinInformation = [...newInfo];
+        localStorage.setItem('coinInformation', JSON.stringify(coinInformation))
+        return result;
+      });
+  }
+
+  function handleAddCoin() {
+    coinInformation = [
+      ...coinInformation,
+      {
+        symbol: newCoin,
+        amount: 0.0,
+        purchasePrice: 0.0,
+        currentMarketPrice: {
+          gbp: 0.0,
+          usd: 0.0,
+        },
+      },
+    ];
+    getMarketData();
+  }
+
+  $: currentInvestmentValue = coinInformation
+    .reduce(function (total, coin) {
+      return coin.currentMarketPrice !== 0
+        ? total +
+            coin.amount * (coin.purchasePrice / coin.currentMarketPrice.gbp)
+        : 0;
+    }, 0)
+    .toFixed(2);
+
+  $: totalInvested = coinInformation.reduce((total, coin) => {
+    return total + coin.amount;
+  }, 0);
+
+  // Do the initial fetch of the data on page load.
+  getMarketData();
+
+  setInterval(getMarketData, 10000);
 </script>
 
-<main>
-  <h1>Investment Aggre-gator 🐊</h1>
-  <h2>Total Invested: {totalInvested}</h2>
-  <h2>Current investment value: {currentInvestmentValue}</h2>
+<div class="container">
+  <div>
+    <Header {totalInvested} {currentInvestmentValue} />
+  </div>
 
-  <label>
-    coin 1
-    <input type="text" bind:value={coin1} />
-    <input type="number" bind:value={coin1Amount} />
-    <input type="number" bind:value={coin1PurchasePrice} />
-  </label>
+  {#each coinInformation as coin}
+    <div>
+      <div>
+        <span class="form-coin-name">{coin.symbol}</span>
+        <input type="number" bind:value={coin.amount} />
+        <input type="number" bind:value={coin.purchasePrice} />
+      </div>
+    </div>
+  {/each}
 
-  <label>
-    coin 2
-    <input type="text" bind:value={coin2} />
-    <input type="number" bind:value={coin2Amount} />
-    <input type="number" bind:value={coin2PurchasePrice} />
-  </label>
+  <div>
+    <div>
+      <select bind:value={newCoin}>
+        {#each coinList as coin}
+          <option value={coin}>{coin}</option>
+        {/each}
+      </select>
+      <button on:click={handleAddCoin}>add coin</button>
+    </div>
+  </div>
 
-  {#await data then value}
+  <div>
+    <h2>Current Market Price</h2>
     <table>
-      <th>coin</th>
-      <th>£ gbp</th>
-      <th>$ usd</th>
-      {#each Object.keys(value) as key}
+      <thead>
         <tr>
-          {key}
-          <td>{value[key][currency1]}</td>
-          <td>${value[key][currency2]}</td>
+          <th>coin</th>
+          <th>£ gbp</th>
+          <th>$ usd</th>
+        </tr>
+      </thead>
+      {#each coinInformation as coinInfo}
+        <tr>
+          <th>{coinInfo.symbol}</th>
+          <td>{coinInfo.currentMarketPrice.gbp}</td>
+          <td>{coinInfo.currentMarketPrice.usd}</td>
         </tr>
       {/each}
     </table>
-  {/await}
-</main>
+  </div>
+</div>
 
 <style>
-  main {
-    text-align: center;
-    padding: 1em;
-    max-width: 240px;
-    margin: 0 auto;
-  }
 
-  h1 {
-    color: #ff3e00;
-    font-size: 4em;
-    font-weight: 100;
-  }
-
-  table {
-    margin: 20px auto;
-  }
-
-  td {
-    width: 150px;
-  }
-
-  @media (min-width: 640px) {
-    main {
-      max-width: none;
-    }
-  }
+  
 </style>
